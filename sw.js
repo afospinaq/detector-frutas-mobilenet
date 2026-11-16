@@ -1,4 +1,4 @@
-const CACHE_NAME = "fruit-detector-v3";
+const CACHE_NAME = "fruit-detector-v5";
 const APP_FILES = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", event => {
