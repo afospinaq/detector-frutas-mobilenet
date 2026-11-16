@@ -1,15 +1,33 @@
 # Detector de frutas MobileNetV2
 
-Aplicación web para ejecutar MobileNetV2 localmente en el navegador Android mediante LiteRT.js y WebAssembly.
+Aplicación web para clasificar **AVOCADO, MANGO, PAPAYA y TOMATE** en tiempo real con la cámara de Android. La inferencia se realiza en el navegador con LiteRT.js; los fotogramas no se envían a un servidor.
 
-Clases: AVOCADO, MANGO, PAPAYA y TOMATE.
+## Modelo
 
-## Archivos del modelo necesarios
+Sube el archivo del modelo a esta ruta exacta:
 
-Coloca el modelo en `models/MobileNetV2_Deteccion_Frutas_Fijo.tflite` y los archivos WASM de LiteRT.js en `wasm/`.
+`models/MobileNetV2_Deteccion_Frutas_Fijo.tflite`
 
-## Publicación
+Los archivos WebAssembly de LiteRT.js se cargan desde jsDelivr; no es necesario subir la carpeta `wasm/`.
 
-En GitHub: Settings → Pages → Build and deployment → Deploy from a branch → main → /(root).
+## Publicar con GitHub Pages
 
-La cámara requiere HTTPS (GitHub Pages lo proporciona) y permiso del usuario.
+1. Abre **Settings → Pages**.
+2. En **Build and deployment → Source**, selecciona **GitHub Actions**.
+3. El workflow `.github/workflows/deploy.yml` publica automáticamente el sitio cuando se actualiza `main`.
+4. Revisa la pestaña **Actions** hasta que el workflow finalice correctamente.
+
+Después abre:
+
+`https://afospinaq.github.io/detector-frutas-mobilenet/`
+
+## Ejecución
+
+Chrome Android solicita permiso para usar la cámara. El navegador descarga el modelo al dispositivo y ejecuta las predicciones localmente. La primera descarga del modelo requiere Internet; el service worker almacena los recursos propios del sitio en la caché del navegador.
+
+## Modelo y preprocesamiento
+
+- Entrada: `[1, 224, 224, 3]`, RGB float32.
+- Preprocesamiento: MobileNetV2 `preprocess_input`, es decir, canal RGB transformado de [0,255] a [-1,1].
+- Salida 0: probabilidades de clase en el orden AVOCADO, MANGO, PAPAYA, TOMATE.
+- Salida 1: bounding box normalizado `[x_min, y_min, x_max, y_max]`.
