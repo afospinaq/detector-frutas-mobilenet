@@ -1,0 +1,9 @@
+{
+  "name": "Detector de frutas MobileNetV2",
+  "short_name": "Detector frutas",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#081710",
+  "theme_color": "#123b2a",
+  "description": "Clasificación en tiempo real de aguacate, mango, papaya y tomate."
+}
