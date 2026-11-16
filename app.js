@@ -25,12 +25,13 @@ const BOX_OUTPUT_INDEX = 1;
 // Filtro provisional de abstención. El modelo actual solo conoce
 // las cuatro frutas, por lo que este filtro NO sustituye una clase
 // de fondo entrenada.
-const MIN_CONFIDENCE = 0.72;
-const MIN_CLASS_MARGIN = 0.18;
-const STABILITY_WINDOW = 4;
-const REQUIRED_STABLE_VOTES = 3;
-const MIN_BOX_AREA = 0.012;
-const MAX_BOX_AREA = 0.88;
+const MIN_CONFIDENCE = 0.48;
+const MIN_CLASS_MARGIN = 0.12;
+const STABILITY_WINDOW = 3;
+const REQUIRED_STABLE_VOTES = 2;
+const MIN_BOX_AREA = 0.005;
+const MAX_BOX_AREA = 0.95;
+const HOLD_LAST_DETECTION_FRAMES = 3;
 
 // ============================================================
 // ELEMENTOS
@@ -83,6 +84,8 @@ let cameraOperationId = 0;
 let lastInferenceFinished = 0;
 let inferenceCount = 0;
 let predictionHistory = [];
+let lastStableDetection = null;
+let lastStableMisses = 0;
 
 // ============================================================
 // INTERFAZ
@@ -325,6 +328,9 @@ async function inferOneFrame() {
     inferenceCount++;
 
     if (stable) {
+      lastStableDetection = stable;
+      lastStableMisses = 0;
+
       className.textContent = CLASSES[stable.classIndex];
       confidenceValue.textContent = (stable.confidence * 100).toFixed(1) + "%";
       confidenceBar.style.width = (stable.confidence * 100) + "%";
@@ -332,10 +338,32 @@ async function inferOneFrame() {
 
       statusText.textContent =
         "Detección estable · " + inferenceCount + " inferencias";
+
+    } else if (
+      lastStableDetection &&
+      lastStableMisses < HOLD_LAST_DETECTION_FRAMES
+    ) {
+      // Mantener brevemente la última caja válida si una predicción
+      // fluctúa durante uno o dos fotogramas. Evita el parpadeo.
+      lastStableMisses++;
+
+      className.textContent = CLASSES[lastStableDetection.classIndex];
+      confidenceValue.textContent =
+        (lastStableDetection.confidence * 100).toFixed(1) + "%";
+      confidenceBar.style.width =
+        (lastStableDetection.confidence * 100) + "%";
+      drawBoundingBox(lastStableDetection.box);
+
+      statusText.textContent =
+        "Manteniendo detección estable...";
+
     } else {
+      lastStableDetection = null;
+      lastStableMisses = 0;
+
       showNoReliableDetection(
         candidate
-          ? "Verificando estabilidad de la fruta..."
+          ? "Confirmando la fruta en los siguientes fotogramas..."
           : "Esperando una fruta clara y una predicción confiable..."
       );
     }
@@ -352,6 +380,8 @@ async function inferOneFrame() {
   } catch (error) {
     console.error("ERROR DE INFERENCIA:", error);
     predictionHistory = [];
+    lastStableDetection = null;
+    lastStableMisses = 0;
     showNoReliableDetection("Error de inferencia: " + error.message);
 
   } finally {
@@ -557,6 +587,8 @@ async function startCamera() {
     running = true;
     processing = false;
     predictionHistory = [];
+    lastStableDetection = null;
+    lastStableMisses = 0;
     inferenceCount = 0;
     lastInferenceFinished = 0;
 
@@ -646,6 +678,8 @@ function stopCamera(message = "Cámara detenida.") {
   clearOverlay();
   showPlaceholder(true);
   predictionHistory = [];
+  lastStableDetection = null;
+  lastStableMisses = 0;
 
   startBtn.disabled = !model;
   stopBtn.disabled = true;
