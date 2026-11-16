@@ -14,7 +14,7 @@ h1{font-size:24px;line-height:1.1;margin:0;letter-spacing:-.6px}
 .fps{color:var(--muted);letter-spacing:.2px}
 .camera-stage{position:relative;width:100%;aspect-ratio:16/9;background:#020805;border-radius:13px;overflow:hidden}
 #camera,#overlay{position:absolute;inset:0;width:100%;height:100%}
-#camera{object-fit:cover}
+#camera{object-fit:fill}
 #overlay{pointer-events:none}
 .placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:9px;color:#d7e9dc;text-align:center;padding:20px}
 .placeholder span{font-size:12px;color:var(--muted)}\n.placeholder[hidden]{display:none!important}
@@ -41,3 +41,11 @@ footer{text-align:center;padding:22px 8px 0;color:var(--muted)}
 footer p{font-size:10px;letter-spacing:1.5px;font-weight:900;color:#c6dbcd;margin:0 0 7px}
 footer small{font-size:10px;line-height:1.5}
 @media(max-width:420px){.app{padding:18px 12px 26px}.header{gap:10px}.state{font-size:9px;padding:6px 8px}h1{font-size:21px}h2{font-size:23px}.camera-card,.prediction-card{padding:12px}.metrics{gap:6px}.metrics div{padding:8px}.metrics strong{font-size:12px}}
+
+/* Indicadores de las cuatro clases */
+.class-scores{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0 14px}
+.class-scores div{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#0b1e13;border:1px solid #1d3b29;padding:10px 12px;border-radius:10px}
+.class-scores span{font-size:10px;letter-spacing:.8px;color:var(--muted);font-weight:800}
+.class-scores strong{font-size:13px;color:var(--green);font-variant-numeric:tabular-nums}
+.placeholder[hidden]{display:none!important;visibility:hidden!important;pointer-events:none!important}
+@media(max-width:420px){.class-scores{gap:6px}.class-scores div{padding:8px}.class-scores span{font-size:9px}.class-scores strong{font-size:12px}}
