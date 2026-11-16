@@ -50,6 +50,7 @@ const engineName = document.getElementById("engineName");
 const fpsLabel = document.getElementById("fpsLabel");
 
 const placeholder = document.getElementById("cameraPlaceholder");
+const cameraStage = document.getElementById("cameraStage");
 
 // ======================================================
 // CANVAS PARA PREPROCESAMIENTO
@@ -399,6 +400,7 @@ async function classifyFrame() {
 
         // Dibujar bounding box.
         drawBoundingBox(boundingBox);
+        fpsFrames++;
 
         console.log(
             "CLASE:",
@@ -541,8 +543,6 @@ function processFrames(now) {
         lastInference = now;
 
         classifyFrame();
-
-        fpsFrames++;
     }
 
     if (now - lastFpsUpdate >= 1000) {
@@ -597,6 +597,19 @@ async function startCamera() {
         video.srcObject = cameraStream;
 
         await video.play();
+
+        // Relación de aspecto real de la cámara: evita deformar la vista.
+        const cameraSettings =
+            cameraStream.getVideoTracks()[0]?.getSettings() || {};
+
+        const frameWidth =
+            video.videoWidth || cameraSettings.width || 1280;
+
+        const frameHeight =
+            video.videoHeight || cameraSettings.height || 720;
+
+        cameraStage.style.aspectRatio =
+            `${frameWidth} / ${frameHeight}`;
 
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
