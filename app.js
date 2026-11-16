@@ -1,40 +1,44 @@
-
 import {
-    loadLiteRt,
-    loadAndCompile,
-    Tensor
+  loadLiteRt,
+  loadAndCompile,
+  Tensor
 } from "https://cdn.jsdelivr.net/npm/@litertjs/core@2.6.0/+esm";
 
-// ======================================================
-// CONFIGURACIÓN
-// ======================================================
+// ============================================================
+// MODELO Y CONFIGURACIÓN
+// ============================================================
 
 const MODEL_URL = new URL(
-    "./models/MobileNetV2_Deteccion_Frutas_Batch1.tflite",
-    import.meta.url
+  "./models/MobileNetV2_Deteccion_Frutas_Batch1.tflite",
+  import.meta.url
 ).href;
 
 const WASM_URL =
-    "https://cdn.jsdelivr.net/npm/@litertjs/core@2.6.0/wasm/";
+  "https://cdn.jsdelivr.net/npm/@litertjs/core@2.6.0/wasm/";
 
-const IMAGE_SIZE = 224;
+const SIZE = 224;
+const CLASSES = ["AVOCADO", "MANGO", "PAPAYA", "TOMATE"];
+const TARGET_INTERVAL_MS = 120;
 
-const CLASSES = [
-    "AVOCADO",
-    "MANGO",
-    "PAPAYA",
-    "TOMATE"
-];
+// El conversor validó: salida 0 = clase; salida 1 = bounding_box.
+// La comparación Keras/TFLite dio errores menores a 0.000001.
+const CLASS_OUTPUT_INDEX = 0;
+const BOX_OUTPUT_INDEX = 1;
 
-const FRAME_INTERVAL = 100;
+// Formato mostrado actualmente. El orden de coordenadas de la cabeza
+// de bounding box debe cotejarse con las etiquetas usadas al entrenar.
+const BOX_FORMAT = "xyxy";
 
-// ======================================================
-// ELEMENTOS HTML
-// ======================================================
+// ============================================================
+// ELEMENTOS
+// ============================================================
 
 const video = document.getElementById("camera");
-const canvas = document.getElementById("overlay");
-const ctx = canvas.getContext("2d");
+const overlay = document.getElementById("overlay");
+const ctx = overlay.getContext("2d");
+
+const cameraStage = document.getElementById("cameraStage");
+const placeholder = document.getElementById("cameraPlaceholder");
 
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
@@ -49,663 +53,408 @@ const inferenceTime = document.getElementById("inferenceTime");
 const engineName = document.getElementById("engineName");
 const fpsLabel = document.getElementById("fpsLabel");
 
-const placeholder = document.getElementById("cameraPlaceholder");
-const cameraStage = document.getElementById("cameraStage");
-
-// ======================================================
-// CANVAS PARA PREPROCESAMIENTO
-// ======================================================
-
 const inputCanvas = document.createElement("canvas");
-
-inputCanvas.width = IMAGE_SIZE;
-inputCanvas.height = IMAGE_SIZE;
+inputCanvas.width = SIZE;
+inputCanvas.height = SIZE;
 
 const inputCtx = inputCanvas.getContext("2d", {
-    willReadFrequently: true
+  willReadFrequently: true
 });
 
-// ======================================================
-// VARIABLES GLOBALES
-// ======================================================
+const scoreElements = Object.fromEntries(
+  CLASSES.map(name => [
+    name,
+    document.getElementById("score" + name)
+  ])
+);
+
+// ============================================================
+// ESTADO
+// ============================================================
 
 let model = null;
 let cameraStream = null;
-
 let running = false;
 let processing = false;
+let nextTimer = null;
+let lastInferenceFinished = 0;
+let inferenceCount = 0;
 
-let animationId = null;
+// ============================================================
+// INTERFAZ Y AYUDAS
+// ============================================================
 
-let lastInference = 0;
-
-let fpsFrames = 0;
-let lastFpsUpdate = performance.now();
-
-// ======================================================
-// ESTADO VISUAL
-// ======================================================
-
-function updateModelState(message, type = "loading") {
-    modelState.textContent = message;
-    modelState.className = "state state-" + type;
+function setModelState(message, type = "loading") {
+  modelState.textContent = message;
+  modelState.className = "state state-" + type;
 }
 
-// ======================================================
-// CARGAR MODELO
-// ======================================================
+function showPlaceholder(show) {
+  placeholder.hidden = !show;
+  placeholder.style.display = show ? "flex" : "none";
+  placeholder.setAttribute("aria-hidden", show ? "false" : "true");
+}
+
+function clearScores() {
+  for (const name of CLASSES) {
+    if (scoreElements[name]) scoreElements[name].textContent = "--%";
+  }
+}
+
+function updateScores(values) {
+  CLASSES.forEach((name, i) => {
+    const value = Math.max(0, Math.min(1, Number(values[i]) || 0));
+    if (scoreElements[name]) {
+      scoreElements[name].textContent = (value * 100).toFixed(1) + "%";
+    }
+  });
+}
+
+// ============================================================
+// CARGA DEL MODELO
+// ============================================================
 
 async function initializeModel() {
+  try {
+    setModelState("Cargando modelo", "loading");
+    statusText.textContent = "Cargando MobileNetV2 en este dispositivo...";
+    startBtn.disabled = true;
 
-    try {
+    await loadLiteRt(WASM_URL);
 
-        updateModelState("Cargando modelo", "loading");
+    // WASM es el backend estable que ya logró cargar el modelo en este móvil.
+    model = await loadAndCompile(MODEL_URL, {
+      accelerator: "wasm"
+    });
 
-        statusText.textContent =
-            "Preparando el modelo MobileNetV2...";
+    const inputDetails = model.getInputDetails();
+    const outputDetails = model.getOutputDetails();
 
-        startBtn.disabled = true;
+    console.info("ENTRADA DEL MODELO:", inputDetails);
+    console.info("SALIDAS DEL MODELO:", outputDetails);
 
-        // Cargar runtime de LiteRT.
-        await loadLiteRt(WASM_URL);
-
-        // Intentar aceleración mediante GPU.
-        try {
-
-            model = await loadAndCompile(
-                MODEL_URL,
-                { accelerator: "webgpu" }
-            );
-
-            engineName.textContent = "WebGPU";
-
-        } catch (gpuError) {
-
-            console.warn(
-                "WebGPU no disponible. Se utilizará WASM.",
-                gpuError
-            );
-
-            model = await loadAndCompile(
-                MODEL_URL,
-                { accelerator: "wasm" }
-            );
-
-            engineName.textContent = "WASM";
-        }
-
-        // Inspeccionar las salidas del modelo.
-        console.log(
-            "ENTRADAS:",
-            model.getInputDetails()
-        );
-
-        console.log(
-            "SALIDAS:",
-            model.getOutputDetails()
-        );
-
-        updateModelState("Modelo listo", "ready");
-
-        statusText.textContent =
-            "MobileNetV2 cargado. Puedes iniciar la cámara.";
-
-        startBtn.disabled = false;
-
-    } catch (error) {
-
-        console.error("ERROR AL CARGAR MODELO:", error);
-
-        updateModelState("Error del modelo", "error");
-
-        statusText.textContent =
-            "No se pudo cargar el modelo. Verifica la ruta y el archivo TFLite.";
-
+    if (!inputDetails?.length || !outputDetails || outputDetails.length !== 2) {
+      throw new Error("El modelo no presenta una entrada y dos salidas como se esperaba.");
     }
+
+    const inputShape = Array.from(inputDetails[0].shape);
+    if (inputShape.join(",") !== "1,224,224,3") {
+      throw new Error("La entrada del modelo no coincide con [1,224,224,3]: " + inputShape);
+    }
+
+    engineName.textContent = "WASM";
+    setModelState("Modelo listo", "ready");
+    statusText.textContent = "Modelo cargado. Inicia la cámara para detectar.";
+    startBtn.disabled = false;
+
+  } catch (error) {
+    console.error("ERROR CARGANDO MODELO:", error);
+    model = null;
+    setModelState("Error del modelo", "error");
+    statusText.textContent = "No se pudo cargar el modelo: " + error.message;
+    startBtn.disabled = true;
+  }
 }
 
-// ======================================================
-// PREPROCESAMIENTO
-// ======================================================
+// ============================================================
+// PREPROCESAMIENTO DE LA IMAGEN
+// ============================================================
 
-function preprocessFrame() {
+function createInputTensor() {
+  // Mantiene el mismo procedimiento usado al validar el modelo:
+  // redimensionado RGB 224x224 y MobileNetV2 preprocess_input [-1,1].
+  inputCtx.drawImage(video, 0, 0, SIZE, SIZE);
 
-    // Redimensionar a 224x224.
-    inputCtx.drawImage(
-        video,
-        0,
-        0,
-        IMAGE_SIZE,
-        IMAGE_SIZE
-    );
+  const pixels = inputCtx.getImageData(0, 0, SIZE, SIZE).data;
+  const values = new Float32Array(SIZE * SIZE * 3);
 
-    const imageData = inputCtx.getImageData(
-        0,
-        0,
-        IMAGE_SIZE,
-        IMAGE_SIZE
-    );
+  let j = 0;
+  for (let i = 0; i < pixels.length; i += 4) {
+    values[j++] = pixels[i] / 127.5 - 1;
+    values[j++] = pixels[i + 1] / 127.5 - 1;
+    values[j++] = pixels[i + 2] / 127.5 - 1;
+  }
 
-    const pixels = imageData.data;
-
-    const inputData = new Float32Array(
-        IMAGE_SIZE * IMAGE_SIZE * 3
-    );
-
-    let index = 0;
-
-    // RGB y normalización MobileNetV2 [-1, 1].
-    for (let i = 0; i < pixels.length; i += 4) {
-
-        inputData[index++] =
-            pixels[i] / 127.5 - 1;
-
-        inputData[index++] =
-            pixels[i + 1] / 127.5 - 1;
-
-        inputData[index++] =
-            pixels[i + 2] / 127.5 - 1;
-    }
-
-    return inputData;
+  return new Tensor(values, [1, SIZE, SIZE, 3]);
 }
 
-// ======================================================
-// IDENTIFICAR LAS DOS SALIDAS
-// ======================================================
+// ============================================================
+// INFERENCIA CONTINUA Y LIBERACIÓN DE MEMORIA
+// ============================================================
 
-function identifyOutputs(values0, values1) {
+async function inferOneFrame() {
+  if (!model || !running || processing || video.readyState < 2) return;
 
-    const details = model.getOutputDetails();
+  processing = true;
+  const startedAt = performance.now();
 
-    const names = details.map(
-        item => String(item.name || "").toLowerCase()
-    );
+  let inputTensor = null;
+  let outputs = null;
 
-    let classIndex = names.findIndex(
-        name =>
-            name.includes("clase") ||
-            name.includes("class") ||
-            name.includes("softmax") ||
-            name.includes("prob")
-    );
+  try {
+    inputTensor = createInputTensor();
 
-    let boxIndex = names.findIndex(
-        name =>
-            name.includes("bounding") ||
-            name.includes("bbox") ||
-            name.includes("box")
-    );
+    // LiteRT.js devuelve un arreglo de tensores. La lectura oficial es
+    // await output.data(); cada tensor se elimina por separado.
+    outputs = await model.run(inputTensor);
 
-    // Si los nombres no identifican las salidas,
-    // buscar cuál tiene comportamiento de softmax.
-    if (classIndex === -1 || boxIndex === -1) {
-
-        function probabilityScore(values) {
-
-            const valid = values.every(
-                value =>
-                    Number.isFinite(value) &&
-                    value >= 0 &&
-                    value <= 1
-            );
-
-            const sum = values.reduce(
-                (total, value) => total + value,
-                0
-            );
-
-            return valid
-                ? Math.abs(sum - 1)
-                : Infinity;
-        }
-
-        const score0 = probabilityScore(values0);
-        const score1 = probabilityScore(values1);
-
-        if (score0 < score1) {
-
-            classIndex = 0;
-            boxIndex = 1;
-
-        } else if (score1 < score0) {
-
-            classIndex = 1;
-            boxIndex = 0;
-
-        } else {
-
-            // Orden de salida original del modelo Keras:
-            // bounding_box, clase.
-            classIndex = 1;
-            boxIndex = 0;
-        }
+    if (!Array.isArray(outputs) || outputs.length !== 2) {
+      throw new Error("La inferencia no devolvió las dos salidas esperadas.");
     }
 
-    return {
-        classIndex,
-        boxIndex
-    };
-}
+    const classValuesRaw = await outputs[CLASS_OUTPUT_INDEX].data();
+    const boxValuesRaw = await outputs[BOX_OUTPUT_INDEX].data();
 
-// ======================================================
-// INFERENCIA
-// ======================================================
+    const probabilities = Array.from(classValuesRaw).slice(0, 4);
+    const box = Array.from(boxValuesRaw).slice(0, 4);
 
-async function classifyFrame() {
-
-    if (
-        !model ||
-        !running ||
-        processing ||
-        video.readyState < 2
-    ) {
-        return;
+    if (probabilities.length !== 4 || box.length !== 4) {
+      throw new Error("Dimensiones de salida incorrectas.");
     }
 
-    processing = true;
-
-    const startedAt = performance.now();
-
-    let inputTensor = null;
-    let results = null;
-
-    let output0 = null;
-    let output1 = null;
-
-    try {
-
-        // Preparar imagen.
-        const inputData = preprocessFrame();
-
-        inputTensor = new Tensor(
-            inputData,
-            [1, IMAGE_SIZE, IMAGE_SIZE, 3]
-        );
-
-        // Ejecutar modelo.
-        results = await model.run(inputTensor);
-
-        if (!results || results.length !== 2) {
-            throw new Error(
-                "Se esperaban dos salidas del modelo."
-            );
-        }
-
-        // Pasar las salidas a memoria WASM.
-        output0 = await results[0].moveTo("wasm");
-        output1 = await results[1].moveTo("wasm");
-
-        const values0 = Array.from(
-            output0.toTypedArray()
-        );
-
-        const values1 = Array.from(
-            output1.toTypedArray()
-        );
-
-        if (
-            values0.length !== 4 ||
-            values1.length !== 4
-        ) {
-            throw new Error(
-                "Las salidas no tienen cuatro valores."
-            );
-        }
-
-        const indexes = identifyOutputs(
-            values0,
-            values1
-        );
-
-        const probabilities =
-            indexes.classIndex === 0
-                ? values0
-                : values1;
-
-        const boundingBox =
-            indexes.boxIndex === 0
-                ? values0
-                : values1;
-
-        // Obtener clase más probable.
-        let bestIndex = 0;
-
-        for (let i = 1; i < probabilities.length; i++) {
-
-            if (
-                probabilities[i] >
-                probabilities[bestIndex]
-            ) {
-                bestIndex = i;
-            }
-        }
-
-        const confidence = Math.max(
-            0,
-            Math.min(1, probabilities[bestIndex])
-        );
-
-        // Actualizar interfaz.
-        className.textContent = CLASSES[bestIndex];
-
-        confidenceValue.textContent =
-            (confidence * 100).toFixed(2) + "%";
-
-        confidenceBar.style.width =
-            (confidence * 100) + "%";
-
-        inferenceTime.textContent =
-            (performance.now() - startedAt).toFixed(0) + " ms";
-
-        // Dibujar bounding box.
-        drawBoundingBox(boundingBox);
-        fpsFrames++;
-
-        console.log(
-            "CLASE:",
-            CLASSES[bestIndex],
-            "PROBABILIDADES:",
-            probabilities,
-            "BOUNDING BOX:",
-            boundingBox
-        );
-
-    } catch (error) {
-
-        console.error("ERROR DE INFERENCIA:", error);
-
-        statusText.textContent =
-            "Error de inferencia: " + error.message;
-
-    } finally {
-
-        // Liberar memoria.
-        inputTensor?.delete();
-
-        output0?.delete();
-        output1?.delete();
-
-        results?.delete();
-
-        processing = false;
-    }
-}
-
-// ======================================================
-// DIBUJAR BOUNDING BOX
-// ======================================================
-
-function drawBoundingBox(values) {
-
-    ctx.clearRect(
-        0,
-        0,
-        canvas.width,
-        canvas.height
-    );
-
-    if (!values || values.length !== 4) {
-        return;
+    if (![...probabilities, ...box].every(Number.isFinite)) {
+      throw new Error("El modelo devolvió números no válidos.");
     }
 
-    let [x1, y1, x2, y2] = values;
-
-    // Si las coordenadas están expresadas entre 0 y 224,
-    // convertirlas a coordenadas normalizadas.
-    if (Math.max(
-        Math.abs(x1),
-        Math.abs(y1),
-        Math.abs(x2),
-        Math.abs(y2)
-    ) > 1.5) {
-
-        x1 /= IMAGE_SIZE;
-        y1 /= IMAGE_SIZE;
-        x2 /= IMAGE_SIZE;
-        y2 /= IMAGE_SIZE;
+    let bestIndex = 0;
+    for (let i = 1; i < probabilities.length; i++) {
+      if (probabilities[i] > probabilities[bestIndex]) bestIndex = i;
     }
 
-    // Coordenadas normalizadas.
-    const leftNorm = Math.max(
-        0,
-        Math.min(1, Math.min(x1, x2))
-    );
+    const confidence = Math.max(0, Math.min(1, probabilities[bestIndex]));
 
-    const topNorm = Math.max(
-        0,
-        Math.min(1, Math.min(y1, y2))
-    );
+    className.textContent = CLASSES[bestIndex];
+    confidenceValue.textContent = (confidence * 100).toFixed(1) + "%";
+    confidenceBar.style.width = (confidence * 100) + "%";
+    updateScores(probabilities);
 
-    const rightNorm = Math.max(
-        0,
-        Math.min(1, Math.max(x1, x2))
-    );
+    const finishedAt = performance.now();
+    inferenceTime.textContent = (finishedAt - startedAt).toFixed(0) + " ms";
 
-    const bottomNorm = Math.max(
-        0,
-        Math.min(1, Math.max(y1, y2))
-    );
-
-    const left = leftNorm * canvas.width;
-    const top = topNorm * canvas.height;
-
-    const width =
-        (rightNorm - leftNorm) * canvas.width;
-
-    const height =
-        (bottomNorm - topNorm) * canvas.height;
-
-    if (width < 2 || height < 2) {
-        return;
+    if (lastInferenceFinished > 0) {
+      const interval = finishedAt - lastInferenceFinished;
+      fpsLabel.textContent = (1000 / Math.max(interval, 1)).toFixed(1) + " FPS";
+    } else {
+      fpsLabel.textContent = "Calculando...";
     }
 
-    ctx.strokeStyle = "#70F59A";
+    lastInferenceFinished = finishedAt;
+    inferenceCount++;
 
-    ctx.lineWidth = Math.max(
-        3,
-        canvas.width * 0.005
-    );
-
-    ctx.strokeRect(
-        left,
-        top,
-        width,
-        height
-    );
-
-    // Etiqueta.
-    ctx.fillStyle = "#70F59A";
-    ctx.font = "bold 18px Arial";
-
-    ctx.fillText(
-        className.textContent,
-        left + 4,
-        Math.max(22, top - 8)
-    );
-}
-
-// ======================================================
-// BUCLE DE CLASIFICACIÓN CONTINUA
-// ======================================================
-
-function processFrames(now) {
-
-    if (!running) {
-        return;
-    }
-
-    if (
-        !processing &&
-        now - lastInference >= FRAME_INTERVAL
-    ) {
-
-        lastInference = now;
-
-        classifyFrame();
-    }
-
-    if (now - lastFpsUpdate >= 1000) {
-
-        fpsLabel.textContent =
-            fpsFrames + " FPS";
-
-        fpsFrames = 0;
-
-        lastFpsUpdate = now;
-    }
-
-    animationId = requestAnimationFrame(
-        processFrames
-    );
-}
-
-// ======================================================
-// INICIAR CÁMARA
-// ======================================================
-
-async function startCamera() {
-
-    try {
-
-        if (!model) {
-            throw new Error(
-                "El modelo todavía no está cargado."
-            );
-        }
-
-        cameraStream =
-            await navigator.mediaDevices.getUserMedia({
-
-                audio: false,
-
-                video: {
-                    facingMode: {
-                        ideal: "environment"
-                    },
-
-                    width: {
-                        ideal: 1280
-                    },
-
-                    height: {
-                        ideal: 720
-                    }
-                }
-            });
-
-        video.srcObject = cameraStream;
-
-        await video.play();
-
-        // Relación de aspecto real de la cámara: evita deformar la vista.
-        const cameraSettings =
-            cameraStream.getVideoTracks()[0]?.getSettings() || {};
-
-        const frameWidth =
-            video.videoWidth || cameraSettings.width || 1280;
-
-        const frameHeight =
-            video.videoHeight || cameraSettings.height || 720;
-
-        cameraStage.style.aspectRatio =
-            `${frameWidth} / ${frameHeight}`;
-
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-
-        placeholder.hidden = true;
-
-        running = true;
-
-        startBtn.disabled = true;
-        stopBtn.disabled = false;
-
-        statusText.textContent =
-            "Cámara activa. Muestra una fruta.";
-
-        lastInference = 0;
-        lastFpsUpdate = performance.now();
-        fpsFrames = 0;
-
-        animationId = requestAnimationFrame(
-            processFrames
-        );
-
-    } catch (error) {
-
-        console.error("ERROR DE CÁMARA:", error);
-
-        statusText.textContent =
-            "No se pudo iniciar la cámara: " +
-            error.message;
-    }
-}
-
-// ======================================================
-// DETENER CÁMARA
-// ======================================================
-
-function stopCamera() {
-
-    running = false;
-
-    cancelAnimationFrame(animationId);
-
-    if (cameraStream) {
-
-        cameraStream.getTracks().forEach(
-            track => track.stop()
-        );
-
-        cameraStream = null;
-    }
-
-    video.srcObject = null;
-
-    ctx.clearRect(
-        0,
-        0,
-        canvas.width,
-        canvas.height
-    );
-
-    placeholder.hidden = false;
-
-    startBtn.disabled = !model;
-    stopBtn.disabled = true;
-
-    className.textContent = "Esperando cámara";
-
-    confidenceValue.textContent = "--%";
-    confidenceBar.style.width = "0%";
-
-    inferenceTime.textContent = "-- ms";
-    fpsLabel.textContent = "-- FPS";
+    drawBoundingBox(box);
 
     statusText.textContent =
-        "Cámara detenida.";
+      "Cámara activa · " + inferenceCount + " inferencias completadas";
+
+    console.debug("PREDICCIÓN", {
+      clase: CLASSES[bestIndex],
+      probabilidades,
+      boundingBox: box,
+      inferenciaMs: (finishedAt - startedAt).toFixed(1)
+    });
+
+  } catch (error) {
+    console.error("ERROR DE INFERENCIA:", error);
+    statusText.textContent = "Error de inferencia: " + error.message;
+  } finally {
+    // Liberar siempre todos los tensores, también cuando ocurra un error.
+    if (Array.isArray(outputs)) {
+      for (const tensor of outputs) {
+        try { tensor?.delete?.(); } catch (e) {
+          console.warn("No se pudo liberar una salida:", e);
+        }
+      }
+    }
+
+    try { inputTensor?.delete?.(); } catch (e) {
+      console.warn("No se pudo liberar la entrada:", e);
+    }
+
+    processing = false;
+
+    // Programar el siguiente fotograma después de concluir la inferencia.
+    // Así nunca se solapan ejecuciones ni se acumulan tensores en memoria.
+    if (running) {
+      const elapsed = performance.now() - startedAt;
+      const wait = Math.max(30, TARGET_INTERVAL_MS - elapsed);
+      nextTimer = setTimeout(inferOneFrame, wait);
+    }
+  }
 }
 
-// ======================================================
+// ============================================================
+// BOUNDING BOX
+// ============================================================
+
+function drawBoundingBox(rawBox) {
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+  let a = Number(rawBox[0]);
+  let b = Number(rawBox[1]);
+  let c = Number(rawBox[2]);
+  let d = Number(rawBox[3]);
+
+  // La cabeza actual entrega coordenadas normalizadas según la conversión.
+  // Si vinieran en píxeles de 224, convertirlas a proporciones.
+  if (Math.max(Math.abs(a), Math.abs(b), Math.abs(c), Math.abs(d)) > 1.5) {
+    a /= SIZE;
+    b /= SIZE;
+    c /= SIZE;
+    d /= SIZE;
+  }
+
+  let leftN, topN, rightN, bottomN;
+
+  if (BOX_FORMAT === "xyxy") {
+    leftN = Math.min(a, c);
+    topN = Math.min(b, d);
+    rightN = Math.max(a, c);
+    bottomN = Math.max(b, d);
+  } else {
+    // Alternativa si las etiquetas del entrenamiento fueron cx,cy,w,h.
+    leftN = a - c / 2;
+    topN = b - d / 2;
+    rightN = a + c / 2;
+    bottomN = b + d / 2;
+  }
+
+  leftN = Math.max(0, Math.min(1, leftN));
+  topN = Math.max(0, Math.min(1, topN));
+  rightN = Math.max(0, Math.min(1, rightN));
+  bottomN = Math.max(0, Math.min(1, bottomN));
+
+  const left = leftN * overlay.width;
+  const top = topN * overlay.height;
+  const width = (rightN - leftN) * overlay.width;
+  const height = (bottomN - topN) * overlay.height;
+
+  if (width < 2 || height < 2) return;
+
+  const lineWidth = Math.max(3, overlay.width * 0.005);
+  ctx.lineWidth = lineWidth;
+  ctx.strokeStyle = "#70F59A";
+  ctx.strokeRect(left, top, width, height);
+
+  const label = className.textContent;
+  ctx.font = "bold 18px Arial";
+
+  const labelWidth = ctx.measureText(label).width + 14;
+  const labelHeight = 27;
+  const labelTop = Math.max(0, top - labelHeight);
+
+  ctx.fillStyle = "#70F59A";
+  ctx.fillRect(left, labelTop, labelWidth, labelHeight);
+
+  ctx.fillStyle = "#082014";
+  ctx.fillText(label, left + 7, labelTop + 19);
+}
+
+// ============================================================
+// CÁMARA
+// ============================================================
+
+async function startCamera() {
+  if (!model || running) return;
+
+  try {
+    statusText.textContent = "Solicitando cámara trasera...";
+
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 30, max: 30 }
+      }
+    });
+
+    video.srcObject = cameraStream;
+    await video.play();
+
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
+
+    // El contenedor usa la proporción nativa para que vídeo y caja coincidan.
+    cameraStage.style.aspectRatio = width + " / " + height;
+    overlay.width = width;
+    overlay.height = height;
+
+    showPlaceholder(false);
+
+    running = true;
+    processing = false;
+    inferenceCount = 0;
+    lastInferenceFinished = 0;
+
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+
+    statusText.textContent =
+      "Cámara activa · preparando primera inferencia...";
+
+    fpsLabel.textContent = "Calculando...";
+    nextTimer = setTimeout(inferOneFrame, 50);
+
+  } catch (error) {
+    console.error("ERROR DE CÁMARA:", error);
+    statusText.textContent = "No se pudo iniciar la cámara: " + error.message;
+
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      cameraStream = null;
+    }
+  }
+}
+
+function stopCamera() {
+  running = false;
+
+  if (nextTimer) {
+    clearTimeout(nextTimer);
+    nextTimer = null;
+  }
+
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(track => track.stop());
+    cameraStream = null;
+  }
+
+  video.pause();
+  video.srcObject = null;
+
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  showPlaceholder(true);
+
+  startBtn.disabled = !model;
+  stopBtn.disabled = true;
+
+  className.textContent = "Esperando cámara";
+  confidenceValue.textContent = "--%";
+  confidenceBar.style.width = "0%";
+  inferenceTime.textContent = "-- ms";
+  fpsLabel.textContent = "-- FPS";
+  clearScores();
+
+  statusText.textContent = "Cámara detenida.";
+}
+
+// ============================================================
 // EVENTOS
-// ======================================================
+// ============================================================
 
-startBtn.addEventListener(
-    "click",
-    startCamera
-);
+startBtn.addEventListener("click", startCamera);
+stopBtn.addEventListener("click", stopCamera);
 
-stopBtn.addEventListener(
-    "click",
-    stopCamera
-);
+window.addEventListener("pagehide", () => {
+  running = false;
+  if (nextTimer) clearTimeout(nextTimer);
+  if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
+});
 
 startBtn.disabled = true;
 stopBtn.disabled = true;
-
-// ======================================================
-// INICIAR APLICACIÓN
-// ======================================================
+showPlaceholder(true);
+clearScores();
 
 void initializeModel();
