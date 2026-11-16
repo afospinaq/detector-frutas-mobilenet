@@ -10,7 +10,7 @@ import {
 // ======================================================
 
 const MODEL_URL = new URL(
-    "./models/MobileNetV2_Deteccion_Frutas.tflite",
+    "./models/MobileNetV2_Deteccion_Frutas_Batch1.tflite",
     import.meta.url
 ).href;
 
