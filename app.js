@@ -208,6 +208,10 @@ async function inferOneFrame() {
     const probabilities = Array.from(classValuesRaw).slice(0, 4);
     const box = Array.from(boxValuesRaw).slice(0, 4);
 
+    // Si el usuario detuvo la cámara durante la inferencia,
+    // no actualices una interfaz que ya se detuvo.
+    if (!running) return;
+
     if (probabilities.length !== 4 || box.length !== 4) {
       throw new Error("Dimensiones de salida incorrectas.");
     }
@@ -258,12 +262,12 @@ async function inferOneFrame() {
     statusText.textContent = "Error de inferencia: " + error.message;
   } finally {
     // Liberar siempre todos los tensores, también cuando ocurra un error.
-    if (Array.isArray(outputs)) {
-      for (const tensor of outputs) {
-        try { tensor?.delete?.(); } catch (e) {
-          console.warn("No se pudo liberar una salida:", e);
-        }
-      }
+    try {
+      // LiteRT.js devuelve un contenedor de salidas con su propio delete().
+      // Se elimina el contenedor completo para liberar todos los buffers.
+      outputs?.delete?.();
+    } catch (e) {
+      console.warn("No se pudo liberar el contenedor de salidas:", e);
     }
 
     try { inputTensor?.delete?.(); } catch (e) {
