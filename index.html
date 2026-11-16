@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#123b2a">
+  <meta name="description" content="Detector de aguacate, mango, papaya y tomate en tiempo real con MobileNetV2.">
+  <title>Detector de frutas | MobileNetV2</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="header">
+      <div class="brand-mark">F</div>
+      <div>
+        <p class="eyebrow">VISIÓN ARTIFICIAL · MOBILE NET V2</p>
+        <h1>Detector de frutas</h1>
+      </div>
+      <span id="modelState" class="state state-loading">Cargando modelo</span>
+    </header>
+
+    <section class="camera-card">
+      <div class="camera-top">
+        <span><span class="live-dot"></span> CÁMARA EN VIVO</span>
+        <span id="fpsLabel" class="fps">-- FPS</span>
+      </div>
+      <div id="cameraStage" class="camera-stage">
+        <video id="camera" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+        <div id="cameraPlaceholder" class="placeholder">
+          <div class="camera-icon">◉</div>
+          <strong>La cámara aparecerá aquí</strong>
+          <span>Inicia la cámara para reconocer una fruta</span>
+        </div>
+      </div>
+      <div class="camera-actions">
+        <button id="startBtn" class="primary" disabled>Iniciar cámara</button>
+        <button id="stopBtn" class="secondary" disabled>Detener</button>
+      </div>
+      <p id="statusText" class="status-text" aria-live="polite">Preparando el modelo...</p>
+    </section>
+
+    <section class="prediction-card">
+      <div class="prediction-heading">
+        <div>
+          <p class="eyebrow">RESULTADO DE LA INFERENCIA</p>
+          <h2 id="className">Esperando cámara</h2>
+        </div>
+        <div class="confidence">
+          <strong id="confidenceValue">--%</strong>
+          <span>Confianza</span>
+        </div>
+      </div>
+      <div class="confidence-track"><div id="confidenceBar"></div></div>
+      <div class="metrics">
+        <div><span>Inferencia</span><strong id="inferenceTime">-- ms</strong></div>
+        <div><span>Motor</span><strong id="engineName">--</strong></div>
+        <div><span>Entrada</span><strong>224 × 224</strong></div>
+      </div>
+    </section>
+
+    <footer>
+      <p>AVOCADO · MANGO · PAPAYA · TOMATE</p>
+      <small>El procesamiento de imagen se realiza en este dispositivo. No se transmiten fotogramas de la cámara.</small>
+    </footer>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
