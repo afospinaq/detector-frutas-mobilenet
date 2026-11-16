@@ -49,3 +49,5 @@ footer small{font-size:10px;line-height:1.5}
 .class-scores strong{font-size:13px;color:var(--green);font-variant-numeric:tabular-nums}
 .placeholder[hidden]{display:none!important;visibility:hidden!important;pointer-events:none!important}
 @media(max-width:420px){.class-scores{gap:6px}.class-scores div{padding:8px}.class-scores span{font-size:9px}.class-scores strong{font-size:12px}}
+
+.detection-hint{margin:8px 1px 0;color:#b8cabc;font-size:10px;line-height:1.45}
