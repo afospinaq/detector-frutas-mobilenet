@@ -1,0 +1,43 @@
+:root{color-scheme:dark;--bg:#081710;--panel:#10251a;--panel2:#183425;--green:#8be0a7;--muted:#9bb3a2;--line:#294b36;--white:#f4fbf5}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(ellipse at top,#163b28 0,#081710 52%);color:var(--white);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;min-height:100vh}
+.app{width:min(720px,100%);margin:0 auto;padding:24px 18px 32px}
+.header{display:flex;align-items:center;gap:13px;margin:5px 0 22px}
+.brand-mark{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:var(--green);color:#092013;font-size:25px;font-weight:900}
+.eyebrow{font-size:10px;letter-spacing:1.7px;font-weight:800;color:var(--muted);margin:0 0 5px}
+h1{font-size:24px;line-height:1.1;margin:0;letter-spacing:-.6px}
+.state{margin-left:auto;border:1px solid var(--line);border-radius:99px;padding:7px 10px;font-size:10px;font-weight:800;white-space:nowrap}
+.state-loading{color:#f2ce7b}.state-ready{color:var(--green)}.state-error{color:#ff9b91}
+.camera-card,.prediction-card{background:linear-gradient(145deg,rgba(20,48,33,.97),rgba(13,33,23,.97));border:1px solid var(--line);border-radius:20px;padding:15px;box-shadow:0 16px 45px #0003}
+.camera-top{display:flex;justify-content:space-between;align-items:center;color:#c1d9c8;font-size:10px;font-weight:900;letter-spacing:1.1px;margin:1px 1px 12px}
+.live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#ff5e58;margin-right:6px;box-shadow:0 0 0 4px #ff5e5822}
+.fps{color:var(--muted);letter-spacing:.2px}
+.camera-stage{position:relative;width:100%;aspect-ratio:4/3;background:#020805;border-radius:13px;overflow:hidden}
+#camera,#overlay{position:absolute;inset:0;width:100%;height:100%}
+#camera{object-fit:fill}
+#overlay{pointer-events:none}
+.placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:9px;color:#d7e9dc;text-align:center;padding:20px}
+.placeholder span{font-size:12px;color:var(--muted)}
+.camera-icon{font-size:38px;color:var(--green)}
+.camera-actions{display:flex;gap:10px;margin-top:14px}
+button{border:0;border-radius:12px;padding:13px 16px;font-size:14px;font-weight:800;cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
+.primary{background:var(--green);color:#092013;flex:1}
+.secondary{background:#254633;color:#e9f6ec;min-width:112px}
+.status-text{font-size:12px;color:var(--muted);margin:12px 2px 1px;min-height:16px}
+.prediction-card{margin-top:14px}
+.prediction-heading{display:flex;justify-content:space-between;align-items:center;gap:12px}
+h2{font-size:27px;letter-spacing:-.8px;margin:0;overflow-wrap:anywhere}
+.confidence{text-align:right;flex-shrink:0}
+.confidence strong{display:block;color:var(--green);font-size:27px;line-height:1}
+.confidence span{font-size:10px;color:var(--muted)}
+.confidence-track{height:7px;background:#294332;border-radius:99px;overflow:hidden;margin:16px 0}
+#confidenceBar{height:100%;width:0;background:linear-gradient(90deg,#56bd7d,#a5efb7);border-radius:99px;transition:width .12s}
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.metrics div{background:#0b1e13;border:1px solid #1d3b29;padding:10px;border-radius:11px;min-width:0}
+.metrics span{display:block;font-size:10px;color:var(--muted);margin-bottom:5px}
+.metrics strong{font-size:14px}
+footer{text-align:center;padding:22px 8px 0;color:var(--muted)}
+footer p{font-size:10px;letter-spacing:1.5px;font-weight:900;color:#c6dbcd;margin:0 0 7px}
+footer small{font-size:10px;line-height:1.5}
+@media(max-width:420px){.app{padding:18px 12px 26px}.header{gap:10px}.state{font-size:9px;padding:6px 8px}h1{font-size:21px}h2{font-size:23px}.camera-card,.prediction-card{padding:12px}.metrics{gap:6px}.metrics div{padding:8px}.metrics strong{font-size:12px}}
